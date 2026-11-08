@@ -1,0 +1,22 @@
+seed: 42
+
+paths:
+  data_dir: data
+  chroma_dir: data/chroma          # on Kaggle this lives under /kaggle/working/MedHyGRag
+  results_dir: results
+
+embedding:
+  # Biomedical sentence-embedding model (PubMedBERT fine-tuned for semantic similarity)
+  model_name: NeuML/pubmedbert-base-embeddings
+  batch_size: 64
+  device: cuda                     # falls back to CPU automatically if no GPU
+
+corpus:
+  num_distractors: 20000           # unlabeled PubMedQA abstracts added as distractors
+
+retrieval:
+  collection_name: pubmed_abstracts
+  top_k: 5
+
+splits:
+  dev_size: 100                    # used only for tuning; excluded from reported results
