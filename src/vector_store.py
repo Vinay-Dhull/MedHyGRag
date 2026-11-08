@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Any
 
 import chromadb
 import torch
@@ -7,9 +6,7 @@ import yaml
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-from src.data_loader import Document
-
-SearchHit = dict[str, Any]
+from src.types import Document, SearchHit
 
 
 class VectorStore:

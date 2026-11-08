@@ -3,10 +3,9 @@ from typing import Any
 
 from datasets import load_dataset
 
-DATASET = "qiaojin/PubMedQA"
+from src.types import Document, Question
 
-Question = dict[str, str]
-Document = dict[str, Any]
+DATASET = "qiaojin/PubMedQA"
 
 
 def load_pubmedqa_labeled() -> tuple[Any, list[Question]]:
@@ -26,12 +25,16 @@ def split_dev_test(
     return shuffled[:dev_size], shuffled[dev_size:]
 
 
+def abstract_text(row: dict[str, Any]) -> str:
+    # Only the abstract sections are used. `long_answer` holds the study's
+    # conclusion and would leak the gold label.
+    return " ".join(row["context"]["contexts"])
+
+
 def _to_document(row: dict[str, Any], source: str) -> Document:
-    # Only the abstract sections are indexed. `long_answer` holds the study's
-    # conclusion and would leak the gold label into retrieval.
     return {
         "id": f"{source}_{row['pubid']}",
-        "text": " ".join(row["context"]["contexts"]),
+        "text": abstract_text(row),
         "metadata": {"pubid": str(row["pubid"]), "source": source},
     }
 

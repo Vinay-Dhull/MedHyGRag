@@ -4,7 +4,7 @@ import torch
 import yaml
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-from src.prompts import Messages
+from src.types import Messages
 
 
 class LocalLLM:
