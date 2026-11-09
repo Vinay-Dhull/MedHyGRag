@@ -1,4 +1,5 @@
 import argparse
+import json
 import math
 import sys
 from collections import Counter
@@ -46,6 +47,25 @@ def select_mentions(
     return entities, mentions
 
 
+def extract_entities(documents: list[Document], graph_cfg: dict, cache_path: Path) -> list[set[str]]:
+    # NER over the full corpus takes ~11 minutes on a T4, so results are cached and
+    # reused when the cache matches the current corpus.
+    doc_ids = [d["id"] for d in documents]
+    if cache_path.exists():
+        cached = json.loads(cache_path.read_text())
+        if cached["doc_ids"] == doc_ids:
+            print(f"Reusing cached entities from {cache_path}")
+            return [set(names) for names in cached["entities"]]
+
+    extractor = EntityExtractor(graph_cfg["ner_model"], graph_cfg["ner_batch_size"])
+    entity_sets = extractor.extract([d["text"] for d in documents], show_progress=True)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps({"doc_ids": doc_ids, "entities": [sorted(names) for names in entity_sets]})
+    )
+    return entity_sets
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build the MedHyGRag knowledge graph in Neo4j")
     parser.add_argument("--reset", action="store_true", help="delete the existing graph first")
@@ -54,26 +74,28 @@ def main() -> None:
     config = yaml.safe_load((ROOT / "config.yaml").read_text())
     graph_cfg = config["graph"]
 
-    documents = build_corpus(config["corpus"]["num_distractors"], config["seed"])
-    extractor = EntityExtractor(graph_cfg["ner_model"], graph_cfg["ner_batch_size"])
-    entity_sets = extractor.extract([d["text"] for d in documents], show_progress=True)
-
-    entities, mentions = select_mentions(
-        documents,
-        entity_sets,
-        graph_cfg["min_df"],
-        graph_cfg["max_df_ratio"],
-        graph_cfg["max_entities_per_doc"],
-    )
-    n_nodes = len(documents) + len(entities)
-    print(f"Nodes: {n_nodes:,} ({len(entities):,} entities) | Relationships: {len(mentions):,}")
-    if n_nodes > AURA_FREE_NODE_LIMIT or len(mentions) > AURA_FREE_RELATIONSHIP_LIMIT:
-        raise SystemExit("Exceeds AuraDB Free limits; lower graph.max_entities_per_doc")
-
-    document_rows = [
-        {"id": d["id"], "text": d["text"], "source": d["metadata"]["source"]} for d in documents
-    ]
+    # Connect before the expensive steps so bad credentials fail in seconds.
     with GraphStore() as store:
+        documents = build_corpus(config["corpus"]["num_distractors"], config["seed"])
+        cache_path = ROOT / config["paths"]["data_dir"] / "entities_cache.json"
+        entity_sets = extract_entities(documents, graph_cfg, cache_path)
+
+        entities, mentions = select_mentions(
+            documents,
+            entity_sets,
+            graph_cfg["min_df"],
+            graph_cfg["max_df_ratio"],
+            graph_cfg["max_entities_per_doc"],
+        )
+        n_nodes = len(documents) + len(entities)
+        print(f"Nodes: {n_nodes:,} ({len(entities):,} entities) | Relationships: {len(mentions):,}")
+        if n_nodes > AURA_FREE_NODE_LIMIT or len(mentions) > AURA_FREE_RELATIONSHIP_LIMIT:
+            raise SystemExit("Exceeds AuraDB Free limits; lower graph.max_entities_per_doc")
+
+        document_rows = [
+            {"id": d["id"], "text": d["text"], "source": d["metadata"]["source"]}
+            for d in documents
+        ]
         if args.reset:
             store.reset()
         store.load(document_rows, entities, mentions)
