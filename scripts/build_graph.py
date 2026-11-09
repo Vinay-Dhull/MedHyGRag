@@ -55,7 +55,7 @@ def main() -> None:
     graph_cfg = config["graph"]
 
     documents = build_corpus(config["corpus"]["num_distractors"], config["seed"])
-    extractor = EntityExtractor(graph_cfg["spacy_model"])
+    extractor = EntityExtractor(graph_cfg["ner_model"], graph_cfg["ner_batch_size"])
     entity_sets = extractor.extract([d["text"] for d in documents], show_progress=True)
 
     entities, mentions = select_mentions(

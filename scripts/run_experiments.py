@@ -49,7 +49,7 @@ def load_resources(configs: list[str], config: dict) -> Resources:
         graph_cfg = config["graph"]
         resources.graph_retriever = GraphRetriever(
             GraphStore(),
-            EntityExtractor(graph_cfg["spacy_model"]),
+            EntityExtractor(graph_cfg["ner_model"], graph_cfg["ner_batch_size"]),
             graph_cfg["neighbours_per_entity"],
             graph_cfg["neighbour_weight"],
             graph_cfg["max_facts"],

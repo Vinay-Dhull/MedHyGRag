@@ -28,7 +28,8 @@ llm:
   max_new_tokens: 192
 
 graph:
-  spacy_model: en_core_sci_sm
+  ner_model: d4data/biomedical-ner-all
+  ner_batch_size: 32
   min_df: 2
   max_df_ratio: 0.05
   max_entities_per_doc: 15
