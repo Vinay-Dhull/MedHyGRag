@@ -1,5 +1,5 @@
 seed: 42
-prompt_version: v1
+prompt_version: v3
 
 paths:
   data_dir: data
@@ -25,7 +25,7 @@ llm:
   model_name: Qwen/Qwen2.5-7B-Instruct
   load_in_4bit: true
   batch_size: 4
-  max_new_tokens: 256
+  max_new_tokens: 192
 
 graph:
   spacy_model: en_core_sci_sm

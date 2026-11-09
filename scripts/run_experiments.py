@@ -13,7 +13,12 @@ sys.path.append(str(ROOT))
 from src.data_loader import abstract_text, load_pubmedqa_labeled, split_dev_test  # noqa: E402
 from src.evaluate import LABELS, classification_scores  # noqa: E402
 from src.llm import LocalLLM  # noqa: E402
-from src.prompts import SYSTEM_PROMPTS, plain_messages, rag_messages  # noqa: E402
+from src.prompts import (  # noqa: E402
+    REASONING_PROMPTS,
+    SYSTEM_PROMPTS,
+    plain_messages,
+    rag_messages,
+)
 from src.types import Messages, Question  # noqa: E402
 
 CONFIGS = ("plain_llm", "oracle_rag", "vector_rag", "graph_rag")
@@ -106,12 +111,17 @@ def run_config(
     for start in tqdm(range(0, len(pending), CHECKPOINT_SIZE), desc=config_name):
         chunk = pending[start:start + CHECKPOINT_SIZE]
         messages, retrieved = build_inputs(config_name, chunk, resources, prompt_version, top_k)
+        if prompt_version in REASONING_PROMPTS:
+            predictions, rationales = llm.reason_then_classify(messages, list(LABELS))
+        else:
+            predictions, rationales = llm.classify(messages, list(LABELS)), [""] * len(chunk)
         pd.DataFrame(
             {
                 "id": [q["id"] for q in chunk],
                 "label": [q["label"] for q in chunk],
-                "prediction": llm.classify(messages, list(LABELS)),
+                "prediction": predictions,
                 "retrieved_ids": [";".join(ids) for ids in retrieved],
+                "rationale": rationales,
             }
         ).to_csv(path, mode="a", header=not path.exists(), index=False)
 
