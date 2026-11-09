@@ -36,3 +36,5 @@ graph:
   neighbours_per_entity: 3
   neighbour_weight: 0.5
   max_facts: 6
+  use_ngram_seeds: true
+  normalize: false
