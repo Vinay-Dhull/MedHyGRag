@@ -34,7 +34,13 @@ graph:
   max_df_ratio: 0.05
   max_entities_per_doc: 15
   neighbours_per_entity: 3
-  neighbour_weight: 0.5
+  neighbour_weight: 0.0
   max_facts: 6
   use_ngram_seeds: true
   normalize: false
+
+hybrid:
+  rrf_k: 60
+  candidate_k: 20
+  vector_weight: 1.0
+  graph_weight: 0.5

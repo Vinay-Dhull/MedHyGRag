@@ -21,8 +21,10 @@ from src.prompts import (  # noqa: E402
 )
 from src.types import Messages, Question  # noqa: E402
 
-CONFIGS = ("plain_llm", "oracle_rag", "vector_rag", "graph_rag")
-RETRIEVAL_CONFIGS = ("vector_rag", "graph_rag")
+CONFIGS = ("plain_llm", "oracle_rag", "vector_rag", "graph_rag", "hybrid_rrf", "hybrid_facts")
+RETRIEVAL_CONFIGS = ("vector_rag", "graph_rag", "hybrid_rrf", "hybrid_facts")
+NEEDS_VECTOR = {"vector_rag", "hybrid_rrf", "hybrid_facts"}
+NEEDS_GRAPH = {"graph_rag", "hybrid_rrf", "hybrid_facts"}
 CHECKPOINT_SIZE = 50
 
 
@@ -31,17 +33,18 @@ class Resources:
     gold_texts: dict[str, str]
     vector_store: object | None = None
     graph_retriever: object | None = None
+    hybrid: object | None = None
 
 
 def load_resources(configs: list[str], config: dict) -> Resources:
     labeled, _ = load_pubmedqa_labeled()
     resources = Resources({str(row["pubid"]): abstract_text(row) for row in labeled})
 
-    if "vector_rag" in configs:
+    if NEEDS_VECTOR & set(configs):
         from src.vector_store import VectorStore
 
         resources.vector_store = VectorStore(ROOT / "config.yaml")
-    if "graph_rag" in configs:
+    if NEEDS_GRAPH & set(configs):
         from src.entities import EntityExtractor
         from src.graph_retriever import GraphRetriever
         from src.graph_store import GraphStore
@@ -55,6 +58,18 @@ def load_resources(configs: list[str], config: dict) -> Resources:
             graph_cfg["max_facts"],
             graph_cfg["use_ngram_seeds"],
             graph_cfg["normalize"],
+        )
+    if "hybrid_rrf" in configs:
+        from src.hybrid import HybridRetriever
+
+        hybrid_cfg = config["hybrid"]
+        resources.hybrid = HybridRetriever(
+            resources.vector_store,
+            resources.graph_retriever,
+            hybrid_cfg["rrf_k"],
+            hybrid_cfg["candidate_k"],
+            hybrid_cfg["vector_weight"],
+            hybrid_cfg["graph_weight"],
         )
     return resources
 
@@ -94,6 +109,21 @@ def build_inputs(
                 for t, r in zip(texts, results)
             ]
             return messages, [[hit["id"] for hit in r.hits] for r in results]
+        case "hybrid_rrf":
+            results = resources.hybrid.retrieve_batch(texts, top_k)
+            messages = [
+                rag_messages(t, [hit["text"] for hit in r.hits], prompt_version, r.facts)
+                for t, r in zip(texts, results)
+            ]
+            return messages, [[hit["id"] for hit in r.hits] for r in results]
+        case "hybrid_facts":
+            ranked = resources.vector_store.search_batch(texts, top_k)
+            facts = [resources.graph_retriever.retrieve(t, top_k).facts for t in texts]
+            messages = [
+                rag_messages(t, [hit["text"] for hit in hits], prompt_version, f)
+                for t, hits, f in zip(texts, ranked, facts)
+            ]
+            return messages, [[hit["id"] for hit in hits] for hits in ranked]
     raise ValueError(f"Unknown config: {config_name}")
 
 
