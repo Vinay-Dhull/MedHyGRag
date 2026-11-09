@@ -51,6 +51,10 @@ class GraphRetriever:
         neighbour_weight: float = 0.5,
         max_facts: int = 6,
     ) -> None:
+        n_entities = store.count_nodes("Entity")
+        if n_entities == 0:
+            raise RuntimeError("Knowledge graph is empty; run scripts/build_graph.py first")
+        print(f"Knowledge graph: {n_entities:,} entities")
         self.store = store
         self.extractor = extractor
         self.neighbours_per_entity = neighbours_per_entity

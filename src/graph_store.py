@@ -40,6 +40,7 @@ class GraphStore:
         self.driver = GraphDatabase.driver(
             os.environ["NEO4J_URI"],
             auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
+            notifications_min_severity="OFF",
         )
         self.driver.verify_connectivity()
 
@@ -54,6 +55,10 @@ class GraphStore:
             cypher, parameters_=params, routing_=RoutingControl.READ
         )
         return [record.data() for record in records]
+
+    def count_nodes(self, label: str) -> int:
+        rows = self.query(f"MATCH (n:{label}) RETURN count(n) AS n")
+        return rows[0]["n"]
 
     def reset(self) -> None:
         with self.driver.session() as session:
