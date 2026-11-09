@@ -43,4 +43,4 @@ hybrid:
   rrf_k: 60
   candidate_k: 20
   vector_weight: 1.0
-  graph_weight: 0.5
+  graph_weight: 0.1
