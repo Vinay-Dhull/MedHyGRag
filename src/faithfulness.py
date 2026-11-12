@@ -29,36 +29,47 @@ class FaithfulnessScorer:
         labels = {v.lower(): int(k) for k, v in self.model.model.config.id2label.items()}
         self.entailment_index = labels["entailment"]
 
+    def judge(self, rationales: list[str], contexts: list[list[str]]) -> list[list[dict]]:
+        """Per-claim verdicts: claim text, best entailment probability, and the index
+        of the passage that produced it. Rows without context yield no claims."""
+        claims_per_row = [
+            split_claims(rationale) if passages else []
+            for rationale, passages in zip(rationales, contexts)
+        ]
+        judgements = [
+            [{"claim": claim, "entailment": -1.0, "passage": 0} for claim in claims]
+            for claims in claims_per_row
+        ]
+
+        pairs, owners = [], []
+        for row, (claims, passages) in enumerate(zip(claims_per_row, contexts)):
+            for claim_idx, claim in enumerate(claims):
+                for passage_idx, passage in enumerate(passages):
+                    pairs.append((passage, claim))
+                    owners.append((row, claim_idx, passage_idx))
+
+        if pairs:
+            probs = self.model.predict(
+                pairs, batch_size=self.batch_size, apply_softmax=True, show_progress_bar=True
+            )
+            entailment = np.asarray(probs)[:, self.entailment_index]
+            for (row, claim_idx, passage_idx), p in zip(owners, entailment):
+                verdict = judgements[row][claim_idx]
+                if p > verdict["entailment"]:
+                    verdict["entailment"] = float(p)
+                    verdict["passage"] = passage_idx
+
+        for row in judgements:
+            for verdict in row:
+                verdict["supported"] = verdict["entailment"] >= self.threshold
+        return judgements
+
     def score(self, rationales: list[str], contexts: list[list[str]]) -> list[float | None]:
         """Share of each rationale's claims entailed by at least one retrieved passage.
 
         Returns None for rationales without checkable claims or without context.
         """
-        pairs, owners = [], []
-        claims_per_row = [split_claims(r) for r in rationales]
-        for row, (claims, passages) in enumerate(zip(claims_per_row, contexts)):
-            for claim_idx, claim in enumerate(claims):
-                for passage in passages:
-                    pairs.append((passage, claim))
-                    owners.append((row, claim_idx))
-
-        if not pairs:
-            return [None] * len(rationales)
-
-        probs = self.model.predict(
-            pairs, batch_size=self.batch_size, apply_softmax=True, show_progress_bar=True
-        )
-        entailment = np.asarray(probs)[:, self.entailment_index]
-
-        best: dict[tuple[int, int], float] = {}
-        for owner, p in zip(owners, entailment):
-            best[owner] = max(best.get(owner, 0.0), float(p))
-
-        scores: list[float | None] = []
-        for row, (claims, passages) in enumerate(zip(claims_per_row, contexts)):
-            if not claims or not passages:
-                scores.append(None)
-                continue
-            supported = sum(best[(row, i)] >= self.threshold for i in range(len(claims)))
-            scores.append(supported / len(claims))
-        return scores
+        return [
+            sum(v["supported"] for v in claims) / len(claims) if claims else None
+            for claims in self.judge(rationales, contexts)
+        ]
