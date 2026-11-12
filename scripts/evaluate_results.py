@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import yaml
-from scipy.stats import binomtest
+from scipy.stats import binomtest, wilcoxon
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
@@ -28,6 +28,18 @@ def mcnemar_p(base_correct: pd.Series, other_correct: pd.Series) -> float:
     if only_base + only_other == 0:
         return 1.0
     return binomtest(min(only_base, only_other), only_base + only_other, 0.5).pvalue
+
+
+def wilcoxon_p(base: list[float | None], other: list[float | None]) -> float | None:
+    # Paired signed-rank test on per-question faithfulness; questions where either
+    # system has no checkable claims are dropped from the pair.
+    pairs = [(b, o) for b, o in zip(base, other) if b is not None and o is not None]
+    if len(pairs) < 10:
+        return None
+    differences = [o - b for b, o in pairs]
+    if not any(differences):
+        return 1.0
+    return float(wilcoxon(differences).pvalue)
 
 
 def load_predictions(results_dir: Path, prompt: str) -> dict[str, pd.DataFrame]:
@@ -65,6 +77,7 @@ def main() -> None:
     scorer = FaithfulnessScorer()
 
     base = predictions.get(BASELINE)
+    faithfulness_scores: dict[str, list[float | None]] = {}
     rows = []
     for name, df in predictions.items():
         df = df.loc[shared_ids]
@@ -80,10 +93,25 @@ def main() -> None:
             for ids in sample["retrieved_ids"]
         ]
         if any(contexts):
-            scores = [s for s in scorer.score(sample["rationale"].tolist(), contexts) if s is not None]
+            per_question = scorer.score(sample["rationale"].tolist(), contexts)
+            faithfulness_scores[name] = per_question
+            scores = [s for s in per_question if s is not None]
             row["faithfulness"] = round(sum(scores) / len(scores), 4) if scores else None
             row["faithfulness_n"] = len(scores)
         rows.append(row)
+
+    if BASELINE in faithfulness_scores:
+        for row in rows:
+            name = row["config"]
+            if name != BASELINE and name in faithfulness_scores:
+                p_value = wilcoxon_p(faithfulness_scores[BASELINE], faithfulness_scores[name])
+                row["faithfulness_p_vs_vector"] = None if p_value is None else round(p_value, 4)
+
+        per_question_df = pd.DataFrame(
+            {name: scores for name, scores in faithfulness_scores.items()}, index=sample_ids
+        )
+        per_question_df.index.name = "id"
+        per_question_df.to_csv(results_dir / f"faithfulness_per_question_{args.prompt}.csv")
 
     table = pd.DataFrame(rows)
     table.to_csv(results_dir / f"evaluation_{args.prompt}.csv", index=False)
