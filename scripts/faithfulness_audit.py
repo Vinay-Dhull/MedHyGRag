@@ -72,8 +72,12 @@ def export(config: dict, results_dir: Path, prompt: str, per_label: int) -> None
 
 
 def score(results_dir: Path) -> None:
-    sheet = pd.read_csv(results_dir / SHEET_NAME, keep_default_na=False)
-    key = pd.read_csv(results_dir / KEY_NAME)
+    sheet = pd.read_csv(results_dir / SHEET_NAME, dtype=str, keep_default_na=False)
+    key = pd.read_csv(results_dir / KEY_NAME, dtype={"audit_id": str})
+    # Spreadsheet round-trips can turn ids into text ("1", "1.0") and append blank rows.
+    for frame in (sheet, key):
+        frame["audit_id"] = frame["audit_id"].str.strip().str.replace(r"\.0$", "", regex=True)
+    sheet = sheet[sheet["audit_id"] != ""]
     merged = key.merge(sheet[["audit_id", "human_supported"]], on="audit_id")
     merged["human_supported"] = merged["human_supported"].astype(str).str.strip().str.lower()
     labeled = merged[merged["human_supported"].isin(["yes", "no"])]
